@@ -76,5 +76,4 @@ class Test_MultiVector:
         mv_c = mv_a.add(mv_b)
 
         assert len(mv_c.basis_expansion) == 4
-
         assert np.allclose(mv_c.basis_expansion[1], a + b)

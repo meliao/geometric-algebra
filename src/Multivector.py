@@ -87,25 +87,20 @@ def _compute_num_transpositions(arr_1: np.ndarray, arr_2: np.ndarray) -> int:
 
 
 def _get_zero_basis(k: int) -> List[np.ndarray]:
-    """Given a max order k, this generates a list of arrays (with all zeros)
-        that have the correct shape for an ONB of a k-vector.
+    """Lterally just initializes an array filled with zeros of length 2**k
 
     Args:
         k (int): max order
 
     Returns:
-        List[np.ndarray]: List has length k + 1. Element j of this list is an array with length (k choose j)
+       np.ndarray: Has length 2**k
     """
-    out = []
-    for i in range(k + 1):
-        out.append(np.zeros(math.comb(k, i)))
-    return out
+    return np.zeros(2**k)
 
 
 class MultiVector:
-    def __init__(self, basis_expansion: List[np.ndarray], n: int) -> None:
+    def __init__(self, basis_expansion: np.array, n: int) -> None:
         self.basis_expansion = basis_expansion
-
         self.n = n
 
     @classmethod
@@ -119,9 +114,13 @@ class MultiVector:
         Args:
             vector (np.ndarray): Has shape (n,)
         """
-        empty_basis = _get_zero_basis(vector.shape[0])
-        empty_basis[1] = vector
-        return cls(empty_basis)
+        n = vector.shape[0]
+        empty_basis = _get_zero_basis(n)
+
+        for i in range(n):
+            empty_basis[2**i] = vector[i]
+        
+        return cls(empty_basis, n)
 
 
     def add(self, other: None) -> None:
