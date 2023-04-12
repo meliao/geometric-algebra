@@ -1,7 +1,11 @@
 import numpy as np
 import pytest
 
-from src.Multivector import (MultiVector, ONBElement, _compute_num_transpositions,)
+from src.Multivector import (MultiVector, 
+                            _compute_num_transpositions, 
+                            _compute_output_index, 
+                            _compute_output_parity,
+                            _get_zero_basis)
 
 
 class Test__compute_num_transpositions:
@@ -28,37 +32,34 @@ class Test__compute_num_transpositions:
 
         assert out == 3
 
-    
-class Test_ONBElement:
+class Test__compute_output_parity:
     def test_0(self) -> None:
-        """Easy case where the R side of the product just represents scalars in G_n
-        """
-        x = ONBElement(np.array([True, True, False]), 1)
+        idx_1 = 13
+        idx_2 = 11
 
-        y = ONBElement(np.array([False, False, False]), 1)
+        assert _compute_output_parity(idx_1, idx_2) == 1
+        assert _compute_output_parity(idx_2, idx_1) == -1
 
-        z = x.find_product(y)
 
-        assert np.all(z.bool_array == np.array([True, True, False]))
-        assert z.parity == 1
+
+class Test__compute_output_index:
+    def test_0(self) -> None:
+
+        for idx_1 in range(10):
+            idx_0 = 0
+            expected_out = idx_1
+
+            out = _compute_output_index(idx_0, idx_1)
+            assert out == expected_out
 
     def test_1(self) -> None:
-        x = ONBElement(np.array([True, True, False]), 1)
 
-        y = ONBElement(np.array([False, False, False]), -1)
-        z = x.find_product(y)
+        idx_0 = 13 # 1 0 1 1
+        idx_1 = 11 # 1 1 0 1
+        expected_out = 6 # 0 1 1 0
 
-        assert np.all(z.bool_array == np.array([True, True, False]))
-        assert z.parity == -1
-
-    def test_2(self) -> None:
-        x = ONBElement(np.array([True, True, False, True]), 1)
-
-        y = ONBElement(np.array([True, False, False, False]), 1)
-        z = x.find_product(y)
-
-        assert np.all(z.bool_array == np.array([False, True, False, True]))
-        assert z.parity == 1
+        out = _compute_output_index(idx_0, idx_1)
+        assert out == expected_out
 
 class Test_MultiVector:
     def test_0(self) -> None:
@@ -67,13 +68,70 @@ class Test_MultiVector:
 
         mv_a = MultiVector.from_vector(a)
 
-        assert len(mv_a.basis_expansion) == 4
+        assert len(mv_a.basis_expansion) == 8
         
         mv_b = MultiVector.from_vector(b)
 
-        assert len(mv_b.basis_expansion) == 4
+        assert len(mv_b.basis_expansion) == 8
 
         mv_c = mv_a.add(mv_b)
 
-        assert len(mv_c.basis_expansion) == 4
-        assert np.allclose(mv_c.basis_expansion[1], a + b)
+        assert len(mv_c.basis_expansion) == 8
+
+        expected_out = np.array([0.,
+                                    2 + 1,
+                                    3 + 1,
+                                    0,
+                                    4.5 + 1,
+                                    0,
+                                    0,
+                                    0])
+        assert np.allclose(mv_c.basis_expansion, expected_out)
+
+    def test_1(self) -> None:
+        """
+        Tests geometric product of axis-aligned G_n elements 
+        """
+
+        basis_a = _get_zero_basis(3)
+        basis_b = _get_zero_basis(3)
+
+        # e_1
+        basis_a[1] = 1.
+
+
+        # e_3
+        basis_b[4] = 1.
+
+        mv_a = MultiVector(basis_a, 3)
+        mv_b = MultiVector(basis_b, 3)
+
+        # e_1 e_3
+        mv_c = mv_a.geometric_product(mv_b)
+
+        expected_basis = _get_zero_basis(3)
+        expected_basis[5] = 1.
+
+        assert np.all(mv_c.basis_expansion == expected_basis)
+
+    def test_2(self) -> None:
+        """
+        Tests geometric product of two vectors in R_n
+        """
+        a = np.array([2, 3, 4.5])
+        b = np.array([1, 1, 1])
+
+        mv_a = MultiVector.from_vector(a)
+        mv_b = MultiVector.from_vector(b)
+
+        expected_basis = np.array([9.5, 0, 0, -1, 0, -2.5, -1.5, 0])
+
+        mv_d = MultiVector(expected_basis, 3)
+
+        mv_c = mv_a.geometric_product(mv_b)
+
+        assert np.all(expected_basis == mv_c.basis_expansion)
+
+        assert mv_d == mv_c
+
+

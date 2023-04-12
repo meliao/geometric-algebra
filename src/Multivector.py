@@ -1,54 +1,71 @@
-from tkinter import ON
-from typing import List
-import math
-
 import numpy as np
 
-
-class ONBElement:
-    def __init__(self, bool_array: np.ndarray, parity: int) -> None:
-        """An element in the orthonormal basis of G_n is represented as a boolean array
-        which indicates the subset of R_n standard basis vectors that are producted together.
-        I've also included a parity, because these products are only unique up to their sign, so
-        I can represent both e_1 e_2 e_3 and e_2 e_1 e_3 with this data structure.  
-
-        Args:
-            bool_array (np.ndarray): Indicates the subset of R_n basis vectors in the G_n basis element 
-                                      being represented.
-            parity (int): Indicates the parity. This is either 1 or -1.
-        """
-        self.bool_array = bool_array
-        self.parity = parity
-        self.n = self.bool_array.shape[0]
-
-    def find_product(self, other: None) -> None:
-        """Given another ONBElement object, form their product: self * other
-        Args:
-            other (ONBElement): other ONB element to make the product
-        """
-        assert self.n == other.n
-
-        # First, we find the xor. This determines the set of R_n basis vectors that'll be present 
-        # in the product after canceling
-        out_arr = np.logical_xor(self.bool_array, other.bool_array)
-
-        # Second, number of transpositions to sort the concatenated arrays. This determines the 
-        # parity of the product.
-
-        # These two lines transform the boolean array into a list of integers which give the locations of the Trues 
-        # in the boolean arrays
-        idxes = np.nonzero(self.bool_array)[0]
-        other_idxes = np.nonzero(other.bool_array)[0]
-
-        n_transpositions = _compute_num_transpositions(idxes, other_idxes)
-        if n_transpositions % 2:
-            transposition_parity = -1
-        else:
-            transposition_parity = 1
-
-        out_parity = self.parity * other.parity * transposition_parity
-        return ONBElement(out_arr, out_parity)
         
+
+
+def _compute_output_index(idx_1: int, idx_2: int) -> int:
+    """Given two indices in the MultiVector's representation of the G_n orthonormal basis,
+    this function computes the index of their output. 
+
+    This function interprets the integers as little-endian bitstrings, takes their XOR, and
+    interprets the result as an integer in little-endian.
+
+    This function was written by chatgpt
+
+    Args:
+        idx_1 (int): input index 1
+        idx_2 (int): input index 2
+
+    Returns:
+        int: output index
+    """
+    # bitwise XOR
+    result = idx_1 ^ idx_2
+
+    # Convert result to little endian format
+    result_bytes = result.to_bytes((result.bit_length() + 7) // 8, byteorder='little')
+
+    # Convert little endian bytes to integer
+    result_int = int.from_bytes(result_bytes, byteorder='little')
+
+    return result_int
+
+def _compute_output_parity(idx_1: int, idx_2: int) -> int:
+    """Given two indices in the MultiVector's representation of the G_n orthonormal basis,
+    this function computes the parity of their output. The product of orthonormal basis elements
+    in G_n result in (+1 / -1) of another basis element, and this function decides the parity of the product.
+
+    The output parity is determined by taking the two integers, converting them to little endian bitstrings, 
+    and then making arrays of their nonzero indices, and finding how many transpositions are required to 
+    sort the concatenation of these arrays.
+
+    Args:
+        idx_1 (int): _description_
+        idx_2 (int): _description_
+
+    Returns:
+        int: _description_
+    """
+
+    bitstring_1 = bin(idx_1)[2:][::-1]
+    bitstring_2 = bin(idx_2)[2:][::-1]
+
+    # Make sorted arrays containing the nonzero indices of the bitstrings
+    idxes_1 = np.array([i for i, bit in enumerate(bitstring_1) if bit == '1'])
+    idxes_2 = np.array([i for i, bit in enumerate(bitstring_2) if bit == '1'])
+
+    # Count the number of transpositions required to sort the concatenation
+    # [idxes_1, idxes_2]
+
+    n_transpositions = _compute_num_transpositions(idxes_1, idxes_2)
+
+    if n_transpositions % 2:
+        return -1
+
+    else:
+        return 1
+
+
 
 
 
@@ -86,7 +103,7 @@ def _compute_num_transpositions(arr_1: np.ndarray, arr_2: np.ndarray) -> int:
 
 
 
-def _get_zero_basis(k: int) -> List[np.ndarray]:
+def _get_zero_basis(k: int) -> np.ndarray:
     """Lterally just initializes an array filled with zeros of length 2**k
 
     Args:
@@ -100,6 +117,31 @@ def _get_zero_basis(k: int) -> List[np.ndarray]:
 
 class MultiVector:
     def __init__(self, basis_expansion: np.array, n: int) -> None:
+        """Represents a multivector in G_n, and implements addition and geometric product. 
+
+        The object represents a multivector by storing its coefficients in the orthonormal basis
+        1, e_1, ..., e_n, e_1 e_2, ..., pseudoscalar. The coefficients are stored in an one-dimensional
+        array, and the ordering of this array is a bit counterintuitive. The ordering was chosen to simplify
+        the geometric product (hopefully).
+
+        Each basis element can be associated with a subset I of [n]. This subset can be interpreted as a 
+        bitstring of length n, where there are 1's in the indicies identified by I and 0's everywhere else. This bitstring
+        can be interpreted as a little-endian unsigned integer, which indicates the index of the basis element in the array.
+        
+        index = bitstring[0] * (2 ** 0) + bitstring[1] * (2 ** 1) + bitstring[3] * (2 ** 3) + ... + bitstring[n] * (2 ** n)
+
+        So e_1 corresponds to bitstring [1 0 0 ... 0] -> index 1
+
+        e_2 corresponds to bitstring [0 1 0 0 ... 0] -> index 2
+
+        e_3 corresponds to bitstring [0 0 1 0 ... 0] -> index 4
+
+        e_1 e_3 e_4 corresponds to bitstrinc [1 0 1 1 0 0 ...] -> index 1 + 4 + 8 = 13
+
+        Args:
+            basis_expansion (np.array): Basis expansion with the ordering mentioned above. Has shape (2**n)
+            n (int): Corresponds to the n in G_n
+        """
         self.basis_expansion = basis_expansion
         self.n = n
 
@@ -133,13 +175,8 @@ class MultiVector:
         """
         assert self.n == other.n
 
+        return MultiVector(self.basis_expansion + other.basis_expansion, self.n)
 
-        out_basis = _get_zero_basis(self.n)
-
-        for i in range(self.n):
-            out_basis[i] += self.basis_expansion[i] + other.basis_expansion[i]
-        
-        return MultiVector(out_basis)
 
     def geometric_product(self, other: None) -> None:
         """Given another multivector, returns the geometric product of the 
@@ -150,4 +187,31 @@ class MultiVector:
         Args:
             other (MultiVector): The RHS of the product
         """
-        pass
+        assert self.n == other.n
+        
+        out_basis = _get_zero_basis(self.n)
+
+        for i in range(2 ** self.n):
+            for j in range(2 ** self.n):
+
+                # This could be a LUT if I were motivated
+                output_idx = _compute_output_index(i, j)
+                output_parity = _compute_output_parity(i, j)
+
+                out_basis[output_idx] += self.basis_expansion[i] * other.basis_expansion[j] * output_parity
+
+        return MultiVector(out_basis, self.n)
+
+
+    def __eq__(self, other) -> bool:
+        """
+        Evaluates equality between two multivectors
+        """
+
+        return self.n == other.n and np.all(self.basis_expansion == other.basis_expansion)
+
+    def __ne__(self, other) -> bool:
+        """
+        Evaluates inequality between two multivectors
+        """
+        return not self.__eq__(other)
